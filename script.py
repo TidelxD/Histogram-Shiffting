@@ -1,3 +1,4 @@
+import json
 import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QFileDialog, QHBoxLayout
 , QDesktopWidget, QVBoxLayout, QSizePolicy, QLineEdit)
@@ -7,7 +8,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from skimage.metrics import structural_similarity as ssim
 import cv2
-from PIL import Image
+from PIL import Image, PngImagePlugin
 import numpy as np
 import math
 import os
@@ -116,6 +117,24 @@ class App(QWidget):
         self.image3.setPixmap(
             QPixmap('./temp/embeded.png').scaled(280, 180, Qt.IgnoreAspectRatio, Qt.FastTransformation))
 
+    def save_embedding_params(self ,maxp, maxp2, flag, output_path='./temp/embedding_params.json'):
+        params = {
+            "maxp": maxp,
+            "maxp2": maxp2,
+            "flag": flag
+        }
+        with open(output_path, 'w') as file:
+            json.dump(params, file)
+
+    def load_embedding_params(self ,param_path='./temp/embedding_params.json'):
+        try:
+            with open(param_path, 'r') as file:
+                params = json.load(file)
+            return params["maxp"], params["maxp2"], params["flag"]
+        except FileNotFoundError:
+            print("Error: Embedding parameters not found.")
+            return None, None, None
+
     # image input ( Histogram shiftting if adress is empty else use embedding DAta )
     def in_img(self, address=''):
         if (address == ''):
@@ -203,9 +222,9 @@ class App(QWidget):
             self.image2.setPixmap(
                 QPixmap('./temp/shift.png').scaled(280, 180, Qt.IgnoreAspectRatio, Qt.FastTransformation))
         else:
-            im = Image.open(self.loc1)
-            pix = im.load()
-            height, width = im.size  # Get the width and hight of the image for iterating over
+            embedded_img  = Image.open(self.loc1)
+            pix = embedded_img.load()
+            height, width = embedded_img.size  # Get the width and hight of the image for iterating over
 
             maxp = self.maxp
             maxp2 = self.maxp2
@@ -258,9 +277,18 @@ class App(QWidget):
 
             self.maxp = maxp
             self.maxp2 = maxp2
-
+            # Inside the in_img function, after embedding the watermark, call this function:
+          #  self.save_embedding_params(self.maxp, self.maxp2, self.flag)
             # saving the image
-            im.save('./temp/embeded.png')
+            # Set metadata for the image
+            metadata = PngImagePlugin.PngInfo()
+            metadata.add_text("maxp", str(self.maxp))
+            metadata.add_text("maxp2", str(self.maxp2))
+            metadata.add_text("flag", str(self.flag))
+            # Save the image with metadata
+            embedded_img.save('./temp/embeded.png', "PNG", pnginfo=metadata)
+           # embedded_img.save('./temp/embeded.png', pnginfo=metadata)
+
             # Calculate PSNR, NC, BER, and SSIM
             psnr_value = str(round(Psnr(self.loc1, './temp/embeded.png'), 4))
             nc_value = str(round(calculate_nc(self.loc1, './temp/embeded.png'), 4))
@@ -289,6 +317,13 @@ class App(QWidget):
 
             # extracting data
             image = np.zeros((self.size, self.size))
+            # Inside the extraction_img function, before processing the image:
+           # self.maxp, self.maxp2, self.flag = self.load_embedding_params()
+            # Retrieve the metadata
+            metadata = im.info
+            self.maxp = int(metadata.get("maxp", 0))
+            self.maxp2 = int(metadata.get("maxp2", 0))
+            self.flag = int(metadata.get("flag", 0))
             k1 = 0
             k2 = 0
             binary_data = ''
